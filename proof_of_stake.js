@@ -34,13 +34,18 @@ class Block {
         return this.hash(timestamp, lastHash, data)
     }
 
-    static createBlock(lastBlock, data) {
+    static createBlock(lastBlock, data, wallet) {
         let hash
         let timestamp = Date.now()
         const lastHash = lastBlock.hash
         hash = Block.hash(timestamp, lastHash, data)
 
-        return new this(timestamp, lastHash, hash, data)
+        // get the validators public key
+        let validator = wallet.getPublicKey()
+
+        // Sign the block
+        let signature = Block.signBlockHash(hash, wallet)
+        return new this(timestamp, lastHash, hash, data, validator, signature)
     }
 }
 
@@ -55,7 +60,36 @@ class Blockchain {
 
         return block
     }
+    createBlock(transactions, wallet) {
+        const block = Block.createBlock(
+            this.chain[this.chain.length - 1],
+            transactions,
+            wallet
+        )
+        return block
+    }
 
+    isValidBlock(block) {
+        const lastBlock = this.chain[this.chain.length - 1]
+        /**
+         * check hash
+         * check last hash
+         * check signature
+         * check leader
+         */
+        if (
+            block.lastHash === lastBlock.hash &&
+            block.hash === Block.blockHash(block) &&
+            Block.verifyBlock(block) &&
+            Block.verifyLeader(block, this.getLeader())
+        ) {
+            console.log('block valid')
+            this.addBlock(block)
+            return true
+        } else {
+            return false
+        }
+    }
     isValidChain(chain) {
         if (JSON.stringify(chain[0]) !== JSON.stringify(Block.genesis())) {
             console.log(JSON.stringify(chain))
@@ -88,6 +122,44 @@ class Blockchain {
 
         console.log('Replacing the current chain with new chain')
         this.chain = newChain
+    }
+
+    getBalance(publicKey) {
+        return this.accounts.getBalance(publicKey)
+    }
+
+    getLeader() {
+        return this.stakes.getMax(this.validators.list)
+    }
+
+    executeTransactions(block) {
+        block.data.forEach((transaction) => {
+            switch (transaction.type) {
+                case TRANSACTION_TYPE.transaction:
+                    this.accounts.update(transaction)
+                    this.accounts.transferFee(block, transaction)
+                    break
+                case TRANSACTION_TYPE.stake:
+                    this.stakes.update(transaction)
+                    this.accounts.decrement(
+                        transaction.input.from,
+                        transaction.output.amount
+                    )
+                    this.accounts.transferFee(block, transaction)
+
+                    break
+                case TRANSACTION_TYPE.validator_fee:
+                    if (this.validators.update(transaction)) {
+                        const {
+                            input: { from },
+                            output: { amount },
+                        } = transaction
+                        this.accounts.decrement(from, amount)
+                        this.accounts.transferFee(block, transaction)
+                    }
+                    break
+            }
+        })
     }
 }
 

@@ -4,7 +4,11 @@ const P2P_PORT = process.env.P2P_PORT || 5001
 
 const peers = process.env.PEERS ? process.env.PEERS.split(',') : []
 
-const MESSAGE_TYPE = { chain: 'CHAIN', transaction: 'TRANSACTION' }
+const MESSAGE_TYPE = {
+    chain: 'CHAIN',
+    block: 'BLOCK',
+    transaction: 'TRANSACTION',
+}
 
 class P2PServer {
     constructor(blockchain, transactionPool) {
@@ -60,15 +64,35 @@ class P2PServer {
                 case MESSAGE_TYPE.chain:
                     this.blockchain.replaceChain(data.chain)
                     break
-
                 case MESSAGE_TYPE.transaction:
                     if (
                         !this.transactionPool.transactionExists(
                             data.transaction
                         )
                     ) {
-                        this.transactionPool.addTransaction(data.transaction)
+                        let thresholdReached =
+                            this.transactionPool.addTransaction(
+                                data.transaction
+                            )
                         this.broadcastTransaction(data.transaction)
+                        if (thresholdReached) {
+                            if (
+                                this.blockchain.getLeader() ==
+                                this.wallet.getPublicKey()
+                            ) {
+                                console.log('Creating block')
+                                let block = this.blockchain.createBlock(
+                                    this.transactionPool.transactions,
+                                    this.wallet
+                                )
+                                this.broadcastBlock(block)
+                            }
+                        }
+                    }
+                    break
+                case MESSAGE_TYPE.block:
+                    if (this.blockchain.isValidBlock(data.block)) {
+                        this.broadcastBlock(data.block)
                     }
                     break
             }
@@ -81,6 +105,7 @@ class P2PServer {
         this.messageHandler(socket)
         this.sendChain(socket)
     }
+
     sendChain(socket) {
         socket.send(
             JSON.stringify({
@@ -107,6 +132,21 @@ class P2PServer {
             JSON.stringify({
                 type: MESSAGE_TYPE.transaction,
                 transaction: transaction,
+            })
+        )
+    }
+
+    broadcastBlock(block) {
+        this.sockets.forEach((socket) => {
+            this.sendBlock(socket, block)
+        })
+    }
+
+    sendBlock(socket, block) {
+        socket.send(
+            JSON.stringify({
+                type: MESSAGE_TYPE.block,
+                block: block,
             })
         )
     }

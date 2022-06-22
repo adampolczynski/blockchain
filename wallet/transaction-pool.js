@@ -6,8 +6,12 @@ class TransactionPool {
     }
 
     addTransaction(transaction) {
-        console.log('add transaction in pool', transaction)
         this.transactions.push(transaction)
+        if (this.transactions.length >= TRANSACTION_THRESHOLD) {
+            return true
+        } else {
+            return false
+        }
     }
 
     validTransactions() {
@@ -24,6 +28,10 @@ class TransactionPool {
     transactionExists(transaction) {
         let exists = this.transactions.find((t) => t.id === transaction.id)
         return exists
+    }
+
+    clear() {
+        this.transactions = []
     }
 }
 
